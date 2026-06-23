@@ -9,11 +9,11 @@ export const getCertificates = async (req: Request, res: Response) => {
 
     // Pagination parameters
     const page = parseInt(req.query.page as string) || 1;
-    const requestedLimit = parseInt(req.query.limit as string) || 10;
-    const limit = Math.min(requestedLimit, 100); // Hard cap at 100
+    const requestedLimit = parseInt(req.query.per_page as string) || 20;
+    const per_page = Math.min(requestedLimit, 100); // Hard cap at 100
     const search = req.query.search as string || "";
 
-    const skip = (page - 1) * limit;
+    const skip = (page - 1) * per_page;
 
     let whereClause: any = {};
 
@@ -38,19 +38,19 @@ export const getCertificates = async (req: Request, res: Response) => {
         },
         orderBy: { createdAt: 'desc' },
         skip,
-        take: limit
+        take: per_page
       }),
       prisma.certificate.count({ where: whereClause })
     ]);
 
-    const totalPages = Math.ceil(total / limit);
+    const totalPages = Math.ceil(total / per_page);
 
     res.status(200).json({
       data: certificates,
       total,
       page,
       totalPages,
-      limit
+      per_page
     });
   } catch (error: any) {
     console.error('getCertificates error:', error);

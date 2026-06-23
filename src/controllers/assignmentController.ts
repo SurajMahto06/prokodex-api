@@ -9,10 +9,10 @@ export const assignmentController = {
       const role = req.user?.role;
 
       const page = parseInt(req.query.page as string) || 1;
-      const requestedLimit = parseInt(req.query.limit as string) || 10;
-      const limit = Math.min(requestedLimit, 100); // Hard cap at 100
+      const requestedLimit = parseInt(req.query.per_page as string) || 20;
+      const per_page = Math.min(requestedLimit, 100); // Hard cap at 100
       const search = req.query.search as string || "";
-      const skip = (page - 1) * limit;
+      const skip = (page - 1) * per_page;
 
       let whereClause: any = {};
 
@@ -40,19 +40,19 @@ export const assignmentController = {
           },
           orderBy: { assignedAt: 'desc' },
           skip,
-          take: limit
+          take: per_page
         }),
         prisma.assignment.count({ where: whereClause })
       ]);
 
-      const totalPages = Math.ceil(total / limit);
+      const totalPages = Math.ceil(total / per_page);
 
       res.status(200).json({
         data: assignments,
         total,
         page,
         totalPages,
-        limit
+        per_page
       });
     } catch (error) {
       console.error('Error fetching assignments:', error);

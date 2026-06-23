@@ -228,3 +228,16 @@ model Settings {
   updatedAt                DateTime @updatedAt
 }
 
+// =======================
+// Coupon & Billing
+// =======================
+
+model Coupon {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  type      String   // 'flat' or 'percentage'
+  value     Int
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

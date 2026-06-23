@@ -54,6 +54,28 @@ export const uploadToCloudinary = async (
 };
 
 /**
+ * Upload a base64 encoded image to Cloudinary
+ * @param base64String - Base64 Data URL
+ * @param folder - Cloudinary folder
+ * @returns Cloudinary secure URL
+ */
+export const uploadBase64ToCloudinary = async (
+  base64String: string,
+  folder: string
+): Promise<string> => {
+  try {
+    const result = await cloudinary.uploader.upload(base64String, {
+      folder: `prokodex/${folder}`,
+      resource_type: 'auto',
+    });
+    return result.secure_url;
+  } catch (error) {
+    console.error('Cloudinary base64 upload error:', error);
+    throw error;
+  }
+};
+
+/**
  * Delete a file from Cloudinary by URL
  */
 export const deleteFromCloudinary = async (url: string) => {

@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../utils/db';
+import { uploadBase64ToCloudinary } from '../utils/cloudinary';
 
 export const getQAThreads = async (req: Request, res: Response) => {
   try {
@@ -8,7 +9,7 @@ export const getQAThreads = async (req: Request, res: Response) => {
     const normalizedRole = String(role || '').toUpperCase();
 
     const page = req.query.page ? parseInt(req.query.page as string) : undefined;
-    const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
+    const per_page = req.query.per_page ? parseInt(req.query.per_page as string) : undefined;
 
     let whereClause: any = {};
 
@@ -24,8 +25,8 @@ export const getQAThreads = async (req: Request, res: Response) => {
     }
 
     const total = await prisma.mentorshipQA.count({ where: whereClause });
-    const skip = page && limit ? (page - 1) * limit : undefined;
-    const take = limit;
+    const skip = page && per_page ? (page - 1) * per_page : undefined;
+    const take = per_page;
 
     const threads = await prisma.mentorshipQA.findMany({
       where: whereClause,
@@ -42,7 +43,7 @@ export const getQAThreads = async (req: Request, res: Response) => {
       orderBy: { createdAt: 'desc' }
     });
 
-    if (page !== undefined && limit !== undefined) {
+    if (page !== undefined && per_page !== undefined) {
       res.status(200).json({
         threads,
         hasMore: (skip || 0) + threads.length < total,
@@ -71,12 +72,24 @@ export const createQAThread = async (req: Request, res: Response) => {
       return res.status(400).json({ message: 'courseId and question are required' });
     }
 
+    let uploadedImageUrls: string[] = [];
+    if (imageUrls && Array.isArray(imageUrls)) {
+      uploadedImageUrls = await Promise.all(
+        imageUrls.map(async (img: string) => {
+          if (img && img.startsWith('data:image')) {
+            return await uploadBase64ToCloudinary(img, 'qa_images');
+          }
+          return img;
+        })
+      );
+    }
+
     const newThread = await prisma.mentorshipQA.create({
       data: {
         studentId: userId,
         courseId,
         question,
-        imageUrls: (imageUrls || []) as any
+        imageUrls: uploadedImageUrls as any
       },
       include: {
         student: { select: { id: true, name: true, avatarUrl: true, role: true } },
@@ -168,12 +181,24 @@ export const addReply = async (req: Request, res: Response) => {
       return res.status(404).json({ message: 'QA thread not found' });
     }
 
+    let uploadedImageUrls: string[] = [];
+    if (imageUrls && Array.isArray(imageUrls)) {
+      uploadedImageUrls = await Promise.all(
+        imageUrls.map(async (img: string) => {
+          if (img && img.startsWith('data:image')) {
+            return await uploadBase64ToCloudinary(img, 'qa_images');
+          }
+          return img;
+        })
+      );
+    }
+
     const reply = await prisma.qAReply.create({
       data: {
         qaThreadId: id,
         authorId: userId,
         content,
-        imageUrls: (imageUrls || []) as any
+        imageUrls: uploadedImageUrls as any
       },
       include: {
         author: { select: { id: true, name: true, avatarUrl: true, role: true } }

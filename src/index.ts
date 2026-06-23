@@ -18,6 +18,7 @@ import notificationRoutes from './routes/notificationRoutes';
 import certificateRoutes from './routes/certificateRoutes';
 import statsRoutes from './routes/statsRoutes';
 import settingsRoutes from './routes/settings';
+import couponRoutes from './routes/couponRoutes';
 import { apiLimiter } from './middlewares/rateLimiter';
 
 const app = express();
@@ -34,7 +35,8 @@ app.use(cors({
   origin: allowedOrigins,
   credentials: true
 }));
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(cookieParser());
 
 // Apply rate limiting
@@ -57,6 +59,7 @@ app.use('/api/v1/upload', uploadRoutes);
 app.use('/api/v1/certificates', certificateRoutes);
 app.use('/api/v1/stats', statsRoutes);
 app.use('/api/v1/settings', settingsRoutes);
+app.use('/api/v1/coupons', couponRoutes);
 
 // Basic health check endpoint
 app.get('/health', (req, res) => {

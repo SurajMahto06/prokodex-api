@@ -82,9 +82,9 @@ export const getUsers = async (req: Request, res: Response) => {
     
     // Pagination parameters
     const page = parseInt(req.query.page as string) || 1;
-    const requestedLimit = parseInt(req.query.limit as string) || 10;
-    const limit = Math.min(requestedLimit, 100); // Hard cap at 100
-    const skip = (page - 1) * limit;
+    const requestedLimit = parseInt(req.query.per_page as string) || 20;
+    const per_page = Math.min(requestedLimit, 100); // Hard cap at 100
+    const skip = (page - 1) * per_page;
 
     // Build the where clause
     const whereClause: any = {};
@@ -114,20 +114,20 @@ export const getUsers = async (req: Request, res: Response) => {
         },
         orderBy: { createdAt: 'desc' },
         skip,
-        take: limit
+        take: per_page
       }),
       prisma.user.count({ where: whereClause })
     ]);
 
     const formattedUsers = users.map(user => formatUserResponse(user));
-    const totalPages = Math.ceil(total / limit);
+    const totalPages = Math.ceil(total / per_page);
 
     res.status(200).json({
       data: formattedUsers,
       total,
       page,
       totalPages,
-      limit
+      per_page
     });
   } catch (error: any) {
     console.error('GetUsers error:', error);
