@@ -23,22 +23,80 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteUser = exports.updateUser = exports.createUser = exports.getUserById = exports.getUsers = void 0;
+exports.deleteUser = exports.updateUser = exports.createUser = exports.getUserById = exports.getUsers = exports.syncMentors = void 0;
 const db_1 = require("../utils/db");
 const bcrypt_1 = __importDefault(require("bcrypt"));
-// Helper to exclude password and map assignedCourses to assignedProjects
+// Helper to exclude password and map assignedCourses to assignedCourses
 const formatUserResponse = (user) => {
     const { password, assignedCourses } = user, userWithoutPassword = __rest(user, ["password", "assignedCourses"]);
     const result = Object.assign({}, userWithoutPassword);
     if (assignedCourses) {
-        result.assignedProjects = assignedCourses;
+        result.assignedCourses = assignedCourses;
     }
     return result;
 };
+// GET /api/users/sync-mentors
+const syncMentors = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const mentors = yield db_1.prisma.user.findMany({
+            where: { role: 'MENTOR' },
+            include: { assignedCourses: true }
+        });
+        const students = yield db_1.prisma.user.findMany({
+            where: { role: 'STUDENT' },
+            include: { enrolledCourses: true }
+        });
+        let syncedCount = 0;
+        for (const mentor of mentors) {
+            const assignedCourseIds = mentor.assignedCourses.map(c => c.id);
+            if (assignedCourseIds.length === 0)
+                continue;
+            const overlappingStudents = students.filter(student => student.enrolledCourses.some(course => assignedCourseIds.includes(course.id)));
+            if (overlappingStudents.length > 0) {
+                yield db_1.prisma.user.update({
+                    where: { id: mentor.id },
+                    data: {
+                        mentees: {
+                            connect: overlappingStudents.map(s => ({ id: s.id }))
+                        }
+                    }
+                });
+                syncedCount++;
+            }
+        }
+        for (const student of students) {
+            const enrolledCourseIds = student.enrolledCourses.map(c => c.id);
+            if (enrolledCourseIds.length === 0)
+                continue;
+            const overlappingMentors = mentors.filter(mentor => mentor.assignedCourses.some(course => enrolledCourseIds.includes(course.id)));
+            if (overlappingMentors.length > 0) {
+                yield db_1.prisma.user.update({
+                    where: { id: student.id },
+                    data: {
+                        mentors: {
+                            connect: overlappingMentors.map(m => ({ id: m.id }))
+                        }
+                    }
+                });
+            }
+        }
+        res.status(200).json({ message: `Sync completed! Updated relations for ${syncedCount} mentors.` });
+    }
+    catch (error) {
+        console.error('Sync error:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+});
+exports.syncMentors = syncMentors;
 // GET /api/users
 const getUsers = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { role, status, search } = req.query;
+        // Pagination parameters
+        const page = parseInt(req.query.page) || 1;
+        const requestedLimit = parseInt(req.query.limit) || 10;
+        const limit = Math.min(requestedLimit, 100); // Hard cap at 100
+        const skip = (page - 1) * limit;
         // Build the where clause
         const whereClause = {};
         if (role) {
@@ -54,16 +112,28 @@ const getUsers = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
                 { email: { contains: searchStr } },
             ];
         }
-        const users = yield db_1.prisma.user.findMany({
-            where: whereClause,
-            include: {
-                enrolledCourses: { select: { id: true } },
-                assignedCourses: { select: { id: true } },
-            },
-            orderBy: { createdAt: 'desc' },
-        });
+        const [users, total] = yield Promise.all([
+            db_1.prisma.user.findMany({
+                where: whereClause,
+                include: {
+                    enrolledCourses: { select: { id: true } },
+                    assignedCourses: { select: { id: true } },
+                },
+                orderBy: { createdAt: 'desc' },
+                skip,
+                take: limit
+            }),
+            db_1.prisma.user.count({ where: whereClause })
+        ]);
         const formattedUsers = users.map(user => formatUserResponse(user));
-        res.status(200).json(formattedUsers);
+        const totalPages = Math.ceil(total / limit);
+        res.status(200).json({
+            data: formattedUsers,
+            total,
+            page,
+            totalPages,
+            limit
+        });
     }
     catch (error) {
         console.error('GetUsers error:', error);
@@ -99,7 +169,7 @@ exports.getUserById = getUserById;
 // Note: Can also use authController.register, but this allows admin specific overrides
 const createUser = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const { email, password, name, role, plan, status, enrolledCourseIds, assignedProjectIds } = req.body;
+        const { email, password, name, role, plan, status, enrolledCourseIds, assignedCourseIds } = req.body;
         if (!email || !password || !name) {
             return res.status(400).json({ message: 'Email, password, and name are required' });
         }
@@ -120,11 +190,11 @@ const createUser = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
                 select: { id: true }
             });
         }
-        else if (userRole === 'MENTOR' && assignedProjectIds && assignedProjectIds.length > 0) {
+        else if (userRole === 'MENTOR' && assignedCourseIds && assignedCourseIds.length > 0) {
             overlappingStudents = yield db_1.prisma.user.findMany({
                 where: {
                     role: 'STUDENT',
-                    enrolledCourses: { some: { id: { in: assignedProjectIds } } }
+                    enrolledCourses: { some: { id: { in: assignedCourseIds } } }
                 },
                 select: { id: true }
             });
@@ -134,9 +204,9 @@ const createUser = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
                 enrolledCourses: {
                     connect: enrolledCourseIds.map((id) => ({ id })),
                 },
-            })), (userRole === 'MENTOR' && assignedProjectIds && assignedProjectIds.length > 0 && {
+            })), (userRole === 'MENTOR' && assignedCourseIds && assignedCourseIds.length > 0 && {
                 assignedCourses: {
-                    connect: assignedProjectIds.map((id) => ({ id })),
+                    connect: assignedCourseIds.map((id) => ({ id })),
                 },
             })), (overlappingMentors.length > 0 && {
                 mentors: {
@@ -167,7 +237,7 @@ exports.createUser = createUser;
 const updateUser = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { id } = req.params;
-        const { email, name, role, plan, status, enrolledCourseIds, assignedProjectIds, password } = req.body;
+        const { email, name, role, plan, status, enrolledCourseIds, assignedCourseIds, password } = req.body;
         // Check if user exists
         const existingUser = yield db_1.prisma.user.findUnique({ where: { id: id } });
         if (!existingUser) {
@@ -194,10 +264,10 @@ const updateUser = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
                 connect: enrolledCourseIds.map((courseId) => ({ id: courseId })),
             };
         }
-        if (assignedProjectIds !== undefined) {
+        if (assignedCourseIds !== undefined) {
             updateData.assignedCourses = {
                 set: [], // Disconnect all first
-                connect: assignedProjectIds.map((courseId) => ({ id: courseId })),
+                connect: assignedCourseIds.map((courseId) => ({ id: courseId })),
             };
         }
         const targetRole = updateData.role || existingUser.role;
@@ -208,9 +278,9 @@ const updateUser = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
             });
             updateData.mentors = { set: [], connect: overlappingMentors };
         }
-        else if (targetRole === 'MENTOR' && assignedProjectIds !== undefined) {
+        else if (targetRole === 'MENTOR' && assignedCourseIds !== undefined) {
             const overlappingStudents = yield db_1.prisma.user.findMany({
-                where: { role: 'STUDENT', enrolledCourses: { some: { id: { in: assignedProjectIds } } } },
+                where: { role: 'STUDENT', enrolledCourses: { some: { id: { in: assignedCourseIds } } } },
                 select: { id: true }
             });
             updateData.mentees = { set: [], connect: overlappingStudents };

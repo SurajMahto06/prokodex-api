@@ -27,18 +27,18 @@ exports.completeTopic = exports.getMe = exports.login = exports.register = void 
 const db_1 = require("../utils/db");
 const bcrypt_1 = __importDefault(require("bcrypt"));
 const jwt_1 = require("../utils/jwt");
-// Helper to exclude password and map assignedCourses to assignedProjects
+// Helper to exclude password and map assignedCourses to assignedCourses
 const formatUserResponse = (user) => {
     const { password, assignedCourses } = user, userWithoutPassword = __rest(user, ["password", "assignedCourses"]);
     const result = Object.assign({}, userWithoutPassword);
     if (assignedCourses) {
-        result.assignedProjects = assignedCourses;
+        result.assignedCourses = assignedCourses;
     }
     return result;
 };
 const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const { email, password, name, role, plan, status, enrolledCourseIds, assignedProjectIds } = req.body;
+        const { email, password, name, role, plan, status, enrolledCourseIds, assignedCourseIds } = req.body;
         if (!email || !password || !name) {
             return res.status(400).json({ message: 'Email, password, and name are required' });
         }
@@ -59,11 +59,11 @@ const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
                 select: { id: true }
             });
         }
-        else if (userRole === 'MENTOR' && assignedProjectIds && assignedProjectIds.length > 0) {
+        else if (userRole === 'MENTOR' && assignedCourseIds && assignedCourseIds.length > 0) {
             overlappingStudents = yield db_1.prisma.user.findMany({
                 where: {
                     role: 'STUDENT',
-                    enrolledCourses: { some: { id: { in: assignedProjectIds } } }
+                    enrolledCourses: { some: { id: { in: assignedCourseIds } } }
                 },
                 select: { id: true }
             });
@@ -73,9 +73,9 @@ const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
                 enrolledCourses: {
                     connect: enrolledCourseIds.map((id) => ({ id })),
                 },
-            })), (userRole === 'MENTOR' && assignedProjectIds && assignedProjectIds.length > 0 && {
+            })), (userRole === 'MENTOR' && assignedCourseIds && assignedCourseIds.length > 0 && {
                 assignedCourses: {
-                    connect: assignedProjectIds.map((id) => ({ id })),
+                    connect: assignedCourseIds.map((id) => ({ id })),
                 },
             })), (overlappingMentors.length > 0 && {
                 mentors: {
@@ -89,7 +89,6 @@ const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             include: {
                 enrolledCourses: { select: { id: true, title: true } },
                 assignedCourses: { select: { id: true, title: true } },
-                mentees: { select: { id: true, name: true, email: true } },
             },
         });
         const token = (0, jwt_1.generateToken)({ id: user.id, email: user.email, role: user.role });
@@ -116,8 +115,8 @@ const login = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             include: {
                 enrolledCourses: { select: { id: true, title: true } },
                 assignedCourses: { select: { id: true, title: true } },
-                mentees: { select: { id: true, name: true, email: true } },
                 completedTopics: { select: { id: true } },
+                mentees: { select: { id: true } },
             },
         });
         if (!user) {
@@ -149,9 +148,8 @@ const getMe = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             include: {
                 enrolledCourses: { select: { id: true, title: true, thumbnail: true } },
                 assignedCourses: { select: { id: true, title: true, thumbnail: true } },
-                mentees: { select: { id: true, name: true, email: true, role: true, progressPercentage: true } },
-                mentors: { select: { id: true, name: true, email: true } },
                 completedTopics: { select: { id: true } },
+                mentees: { select: { id: true } },
                 certificates: {
                     select: { id: true, certificateId: true, issueDate: true, course: { select: { id: true, title: true } } },
                 },

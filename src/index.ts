@@ -14,11 +14,17 @@ import meRoutes from './routes/meRoutes';
 import assignmentRoutes from './routes/assignmentRoutes';
 import qaRoutes from './routes/qaRoutes';
 import notificationRoutes from './routes/notificationRoutes';
+import certificateRoutes from './routes/certificateRoutes';
+import statsRoutes from './routes/statsRoutes';
 
 const app = express();
 
 // Middleware
-app.use(cors());
+const allowedOrigin = process.env.ALLOWED_ORIGIN || 'http://localhost:3000';
+app.use(cors({
+  origin: allowedOrigin,
+  credentials: true
+}));
 app.use(express.json());
 
 // Serve static files from the uploads directory
@@ -35,6 +41,8 @@ app.use('/api/v1/courses', courseRoutes);
 app.use('/api/v1/modules', moduleRoutes);
 app.use('/api/v1/topics', topicRoutes);
 app.use('/api/v1/upload', uploadRoutes);
+app.use('/api/v1/certificates', certificateRoutes);
+app.use('/api/v1/stats', statsRoutes);
 
 // Basic health check endpoint
 app.get('/health', (req, res) => {

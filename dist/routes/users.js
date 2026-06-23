@@ -7,6 +7,7 @@ const router = (0, express_1.Router)();
 // All user routes require authentication and ADMIN role
 router.use(auth_1.authenticate);
 router.use((0, auth_1.authorize)('ADMIN'));
+router.get('/sync-mentors', userController_1.syncMentors);
 router.get('/', userController_1.getUsers);
 router.get('/:id', userController_1.getUserById);
 router.post('/', userController_1.createUser);

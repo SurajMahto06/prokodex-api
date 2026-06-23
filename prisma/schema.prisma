@@ -205,6 +205,9 @@ model Certificate {
   id            String   @id @default(uuid())
   certificateId String   @unique
   issueDate     DateTime @default(now())
+  startDate     DateTime?
+  endDate       DateTime?
+  createdAt     DateTime @default(now())
 
   studentId     String
   student       User     @relation("StudentCertificates", fields: [studentId], references: [id])

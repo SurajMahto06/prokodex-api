@@ -79,6 +79,12 @@ export const syncMentors = async (req: Request, res: Response) => {
 export const getUsers = async (req: Request, res: Response) => {
   try {
     const { role, status, search } = req.query;
+    
+    // Pagination parameters
+    const page = parseInt(req.query.page as string) || 1;
+    const requestedLimit = parseInt(req.query.limit as string) || 10;
+    const limit = Math.min(requestedLimit, 100); // Hard cap at 100
+    const skip = (page - 1) * limit;
 
     // Build the where clause
     const whereClause: any = {};
@@ -99,18 +105,30 @@ export const getUsers = async (req: Request, res: Response) => {
       ];
     }
 
-    const users = await prisma.user.findMany({
-      where: whereClause,
-      include: {
-        enrolledCourses: { select: { id: true } },
-        assignedCourses: { select: { id: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+    const [users, total] = await Promise.all([
+      prisma.user.findMany({
+        where: whereClause,
+        include: {
+          enrolledCourses: { select: { id: true } },
+          assignedCourses: { select: { id: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit
+      }),
+      prisma.user.count({ where: whereClause })
+    ]);
 
     const formattedUsers = users.map(user => formatUserResponse(user));
+    const totalPages = Math.ceil(total / limit);
 
-    res.status(200).json(formattedUsers);
+    res.status(200).json({
+      data: formattedUsers,
+      total,
+      page,
+      totalPages,
+      limit
+    });
   } catch (error: any) {
     console.error('GetUsers error:', error);
     res.status(500).json({ message: 'Internal server error' });

@@ -8,26 +8,52 @@ export const assignmentController = {
       const userId = req.user?.id;
       const role = req.user?.role;
 
-      let whereClause = {};
+      const page = parseInt(req.query.page as string) || 1;
+      const requestedLimit = parseInt(req.query.limit as string) || 10;
+      const limit = Math.min(requestedLimit, 100); // Hard cap at 100
+      const search = req.query.search as string || "";
+      const skip = (page - 1) * limit;
+
+      let whereClause: any = {};
 
       if (role === 'STUDENT') {
-        whereClause = { studentId: userId };
+        whereClause.studentId = userId;
       } else if (role === 'MENTOR') {
-        whereClause = { mentorId: userId };
+        whereClause.mentorId = userId;
       }
-      // ADMIN sees all
+      
+      if (search) {
+        whereClause.OR = [
+          { title: { contains: search } },
+          { student: { name: { contains: search } } },
+          { course: { title: { contains: search } } }
+        ];
+      }
 
-      const assignments = await prisma.assignment.findMany({
-        where: whereClause,
-        include: {
-          course: { select: { id: true, title: true } },
-          student: { select: { id: true, name: true, email: true, avatarUrl: true } },
-          mentor: { select: { id: true, name: true, email: true, avatarUrl: true } },
-        },
-        orderBy: { assignedAt: 'desc' }
+      const [assignments, total] = await Promise.all([
+        prisma.assignment.findMany({
+          where: whereClause,
+          include: {
+            course: { select: { id: true, title: true } },
+            student: { select: { id: true, name: true, email: true, avatarUrl: true } },
+            mentor: { select: { id: true, name: true, email: true, avatarUrl: true } },
+          },
+          orderBy: { assignedAt: 'desc' },
+          skip,
+          take: limit
+        }),
+        prisma.assignment.count({ where: whereClause })
+      ]);
+
+      const totalPages = Math.ceil(total / limit);
+
+      res.status(200).json({
+        data: assignments,
+        total,
+        page,
+        totalPages,
+        limit
       });
-
-      res.status(200).json(assignments);
     } catch (error) {
       console.error('Error fetching assignments:', error);
       res.status(500).json({ message: 'Internal server error' });
