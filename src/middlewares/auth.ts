@@ -10,18 +10,32 @@ declare global {
   }
 }
 
-export const authenticate = (req: Request, res: Response, next: NextFunction) => {
-  const authHeader = req.headers.authorization;
+import { prisma } from '../utils/db';
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ message: 'Authentication required' });
-  }
-
-  const token = authHeader.split(' ')[1];
-
+export const authenticate = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const decoded = verifyToken(token);
+    let token = req.cookies?.token;
+
+    // Fallback to Authorization header if no cookie is present
+    if (!token) {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        token = authHeader.split(' ')[1];
+      }
+    }
+
+    if (!token) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+
+    const decoded = verifyToken(token) as any;
     req.user = decoded;
+
+    const settings = await prisma.settings.findUnique({ where: { id: 'global' } });
+    if (settings?.maintenanceMode && req.user.role !== 'ADMIN') {
+      return res.status(503).json({ message: 'Platform is currently under maintenance. Active sessions are temporarily suspended.' });
+    }
+
     next();
   } catch (error) {
     return res.status(401).json({ message: 'Invalid or expired token' });

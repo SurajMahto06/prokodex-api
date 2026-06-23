@@ -3,6 +3,7 @@ dotenv.config();
 
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import path from 'path';
 import authRoutes from './routes/auth';
 import userRoutes from './routes/users';
@@ -16,6 +17,8 @@ import qaRoutes from './routes/qaRoutes';
 import notificationRoutes from './routes/notificationRoutes';
 import certificateRoutes from './routes/certificateRoutes';
 import statsRoutes from './routes/statsRoutes';
+import settingsRoutes from './routes/settings';
+import { apiLimiter } from './middlewares/rateLimiter';
 
 const app = express();
 
@@ -32,6 +35,10 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json());
+app.use(cookieParser());
+
+// Apply rate limiting
+app.use('/api/', apiLimiter);
 
 // Serve static files from the uploads directory
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
@@ -49,6 +56,7 @@ app.use('/api/v1/topics', topicRoutes);
 app.use('/api/v1/upload', uploadRoutes);
 app.use('/api/v1/certificates', certificateRoutes);
 app.use('/api/v1/stats', statsRoutes);
+app.use('/api/v1/settings', settingsRoutes);
 
 // Basic health check endpoint
 app.get('/health', (req, res) => {

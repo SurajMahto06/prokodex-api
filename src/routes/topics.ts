@@ -7,7 +7,8 @@ const router = express.Router();
 
 const topicUploads = uploadMiddleware.fields([
   { name: 'video', maxCount: 1 },
-  { name: 'pdf', maxCount: 1 }
+  { name: 'pdf', maxCount: 1 },
+  { name: 'cheatsheet', maxCount: 1 }
 ]);
 
 router.get('/:id', authenticate, getTopicById);

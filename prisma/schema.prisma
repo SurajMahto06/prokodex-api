@@ -172,6 +172,7 @@ model Assignment {
   status      String   @default("pending_submission") // 'pending_submission', 'submitted', 'approved', 'rejected'
   repoUrl     String?
   fileName    String?
+  fileUrl     String?
   assignedAt  DateTime @default(now())
   dueDate     DateTime?
   submittedAt DateTime?
@@ -214,3 +215,16 @@ model Certificate {
   courseId      String
   course        Course   @relation(fields: [courseId], references: [id])
 }
+
+// =======================
+// Global Settings
+// =======================
+
+model Settings {
+  id                       String   @id @default("global")
+  platformName             String   @default("Prokodex Mentorship Portal")
+  supportEmail             String   @default("support@prokodex.com")
+  maintenanceMode          Boolean  @default(false)
+  updatedAt                DateTime @updatedAt
+}
+

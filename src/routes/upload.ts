@@ -20,7 +20,9 @@ const storage = multer.diskStorage({
   },
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
+    // Sanitize the original file name (remove ext and replace spaces/special chars)
+    const originalName = path.parse(file.originalname).name.replace(/[^a-zA-Z0-9]/g, '_');
+    cb(null, originalName + '_' + uniqueSuffix + path.extname(file.originalname));
   }
 });
 
@@ -39,7 +41,7 @@ const mediaUpload = multer({
   storage: storage,
   limits: { fileSize: 1000 * 1024 * 1024 }, // 1GB limit for videos
   fileFilter: (req, file, cb) => {
-    if (!file.originalname.match(/\.(jpg|jpeg|png|webp|mp4|m4v|webm|pdf|md|txt)$/i)) {
+    if (!file.originalname.match(/\.(jpg|jpeg|png|webp|mp4|m4v|webm|pdf|md|txt|zip|rar|7z)$/i)) {
       return cb(new Error('Invalid file type!'));
     }
     cb(null, true);
@@ -82,11 +84,26 @@ router.post('/pdf', authenticate, mediaUpload.single('pdf'), async (req, res) =>
     if (!req.file) {
       return res.status(400).json({ message: 'No PDF file uploaded' });
     }
-    const cloudinaryUrl = await uploadToCloudinary(req.file.path, 'topics/pdfs', 'raw');
+    const cloudinaryUrl = await uploadToCloudinary(req.file.path, 'topics/pdfs', 'image');
     res.status(200).json({ url: cloudinaryUrl });
   } catch (error: any) {
     console.error('PDF upload error:', error);
     res.status(500).json({ message: error?.message || 'PDF upload failed', details: error });
+  }
+});
+
+// Upload assignment documents (zip, pdf, etc.) as raw to Cloudinary
+router.post('/document', authenticate, mediaUpload.single('document'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'No document file uploaded' });
+    }
+    // Note: ZIP files MUST be uploaded as 'raw', unlike PDFs which we upload as 'image'
+    const cloudinaryUrl = await uploadToCloudinary(req.file.path, 'assignments/documents', 'raw');
+    res.status(200).json({ url: cloudinaryUrl });
+  } catch (error: any) {
+    console.error('Document upload error:', error);
+    res.status(500).json({ message: error.message || 'Error uploading document' });
   }
 });
 

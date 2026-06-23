@@ -21,7 +21,7 @@ export const assignmentController = {
       } else if (role === 'MENTOR') {
         whereClause.mentorId = userId;
       }
-      
+
       if (search) {
         whereClause.OR = [
           { title: { contains: search } },
@@ -217,7 +217,7 @@ export const assignmentController = {
   async submitAssignment(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      const { repoUrl, fileName } = req.body;
+      const { repoUrl, fileName, fileUrl } = req.body;
       const userId = req.user?.id;
 
       const existingAssignment = await prisma.assignment.findUnique({ where: { id: id as string } });
@@ -232,6 +232,7 @@ export const assignmentController = {
         data: {
           repoUrl,
           fileName,
+          fileUrl,
           status: 'submitted',
           submittedAt: new Date()
         },
@@ -262,6 +263,7 @@ export const assignmentController = {
       res.status(500).json({ message: 'Internal server error' });
     }
   },
+  // trigger restart
 
   // DELETE /api/v1/assignments/:id
   async deleteAssignment(req: Request, res: Response) {

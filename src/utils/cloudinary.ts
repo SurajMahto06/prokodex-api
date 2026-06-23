@@ -26,12 +26,16 @@ export const uploadToCloudinary = async (
       ? cloudinary.uploader.upload_large(filePath, {
           folder: `prokodex/${folder}`,
           resource_type: resourceType,
+          use_filename: true,
+          unique_filename: true,
           timeout: 600000, // 10 minutes timeout for slow networks
           chunk_size: 6000000 // 6MB chunks
         })
       : cloudinary.uploader.upload(filePath, {
           folder: `prokodex/${folder}`,
           resource_type: resourceType,
+          use_filename: true,
+          unique_filename: true,
           timeout: 600000,
         })
     );

@@ -14,7 +14,8 @@ const storage = multer.diskStorage({
   },
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
+    const originalName = path.parse(file.originalname).name.replace(/[^a-zA-Z0-9]/g, '_');
+    cb(null, originalName + '_' + uniqueSuffix + path.extname(file.originalname));
   }
 });
 
@@ -22,8 +23,8 @@ export const uploadMiddleware = multer({
   storage: storage,
   limits: { fileSize: 1000 * 1024 * 1024 }, // 1GB limit for videos
   fileFilter: (req, file, cb) => {
-    // Accept images, videos, and pdfs/text
-    if (!file.originalname.match(/\.(jpg|jpeg|png|webp|mp4|m4v|webm|pdf|md|txt)$/i)) {
+    // Accept images, videos, pdfs/text, and zip/archives
+    if (!file.originalname.match(/\.(jpg|jpeg|png|webp|mp4|m4v|webm|pdf|md|txt|zip|rar|7z)$/i)) {
       return cb(new Error('Invalid file type!'));
     }
     cb(null, true);

@@ -13,95 +13,6 @@ const formatUserResponse = (user: any) => {
   return result;
 };
 
-export const register = async (req: Request, res: Response) => {
-  try {
-    const { email, password, name, role, plan, status, enrolledCourseIds, assignedCourseIds } = req.body;
-
-    if (!email || !password || !name) {
-      return res.status(400).json({ message: 'Email, password, and name are required' });
-    }
-
-    const existingUser = await prisma.user.findUnique({ where: { email } });
-    if (existingUser) {
-      return res.status(400).json({ message: 'User already exists' });
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const userRole = role ? String(role).toUpperCase() : 'STUDENT';
-
-    let overlappingMentors: { id: string }[] = [];
-    let overlappingStudents: { id: string }[] = [];
-
-    if (userRole === 'STUDENT' && enrolledCourseIds && enrolledCourseIds.length > 0) {
-      overlappingMentors = await prisma.user.findMany({
-        where: {
-          role: 'MENTOR',
-          assignedCourses: { some: { id: { in: enrolledCourseIds } } }
-        },
-        select: { id: true }
-      });
-    } else if (userRole === 'MENTOR' && assignedCourseIds && assignedCourseIds.length > 0) {
-      overlappingStudents = await prisma.user.findMany({
-        where: {
-          role: 'STUDENT',
-          enrolledCourses: { some: { id: { in: assignedCourseIds } } }
-        },
-        select: { id: true }
-      });
-    }
-
-    const user = await prisma.user.create({
-      data: {
-        email,
-        password: hashedPassword,
-        name,
-        role: userRole as any,
-        plan: plan || null,
-        status: status || 'active',
-        // Connect to enrolled courses (for students)
-        ...(userRole === 'STUDENT' && enrolledCourseIds && enrolledCourseIds.length > 0 && {
-          enrolledCourses: {
-            connect: enrolledCourseIds.map((id: string) => ({ id })),
-          },
-        }),
-        // Connect to assigned projects (for mentors)
-        ...(userRole === 'MENTOR' && assignedCourseIds && assignedCourseIds.length > 0 && {
-          assignedCourses: {
-            connect: assignedCourseIds.map((id: string) => ({ id })),
-          },
-        }),
-        // Connect to mentors automatically (for students)
-        ...(overlappingMentors.length > 0 && {
-          mentors: {
-            connect: overlappingMentors,
-          },
-        }),
-        // Connect to mentees automatically (for mentors)
-        ...(overlappingStudents.length > 0 && {
-          mentees: {
-            connect: overlappingStudents,
-          },
-        }),
-      },
-      include: {
-        enrolledCourses: { select: { id: true, title: true } },
-        assignedCourses: { select: { id: true, title: true } },
-      },
-    });
-
-    const token = generateToken({ id: user.id, email: user.email, role: user.role });
-
-    res.status(201).json({
-      message: 'User registered successfully',
-      user: formatUserResponse(user),
-      token,
-    });
-  } catch (error: any) {
-    console.error('Register error:', error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-};
-
 export const login = async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
@@ -124,6 +35,11 @@ export const login = async (req: Request, res: Response) => {
       return res.status(401).json({ message: 'Invalid email or password' });
     }
 
+    const settings = await prisma.settings.findUnique({ where: { id: 'global' } });
+    if (settings?.maintenanceMode && user.role !== 'ADMIN') {
+      return res.status(403).json({ message: 'Platform is currently under maintenance. Please try again later.' });
+    }
+
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).json({ message: 'Invalid email or password' });
@@ -131,10 +47,16 @@ export const login = async (req: Request, res: Response) => {
 
     const token = generateToken({ id: user.id, email: user.email, role: user.role });
 
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
+
     res.status(200).json({
       message: 'Logged in successfully',
       user: formatUserResponse(user),
-      token,
     });
   } catch (error: any) {
     console.error('Login error:', error);
@@ -142,6 +64,14 @@ export const login = async (req: Request, res: Response) => {
   }
 };
 
+export const logout = async (req: Request, res: Response) => {
+  res.clearCookie('token', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax'
+  });
+  res.status(200).json({ message: 'Logged out successfully' });
+};
 // Get current authenticated user's profile
 export const getMe = async (req: Request, res: Response) => {
   try {

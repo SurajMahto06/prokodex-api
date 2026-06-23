@@ -48,6 +48,7 @@ export const createTopic = async (req: Request, res: Response) => {
 
     let videoUrl = req.body.videoUrl || '';
     let pdfUrl = req.body.pdfUrl || '';
+    let cheatsheetUrl = req.body.cheatsheetUrl || '';
 
     // If pre-uploaded URLs are not provided, upload files directly (fallback)
     const files = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
@@ -56,7 +57,10 @@ export const createTopic = async (req: Request, res: Response) => {
         videoUrl = await uploadToCloudinary(files['video'][0].path, 'topics/videos', 'video');
       }
       if (!pdfUrl && files['pdf'] && files['pdf'].length > 0) {
-        pdfUrl = await uploadToCloudinary(files['pdf'][0].path, 'topics/pdfs', 'raw');
+        pdfUrl = await uploadToCloudinary(files['pdf'][0].path, 'topics/pdfs', 'image');
+      }
+      if (!cheatsheetUrl && files['cheatsheet'] && files['cheatsheet'].length > 0) {
+        cheatsheetUrl = await uploadToCloudinary(files['cheatsheet'][0].path, 'topics/pdfs', 'image');
       }
     }
 
@@ -76,7 +80,8 @@ export const createTopic = async (req: Request, res: Response) => {
           title,
           description: description || '',
           moduleId,
-          pdfUrl: pdfUrl || null
+          pdfUrl: pdfUrl || null,
+          cheatsheetUrl: cheatsheetUrl || null
         }
       });
 
@@ -151,6 +156,18 @@ export const updateTopic = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { title, description } = req.body;
+    let pdfUrl = req.body.pdfUrl;
+    let cheatsheetUrl = req.body.cheatsheetUrl;
+    
+    const files = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
+    if (files) {
+      if (files['pdf'] && files['pdf'].length > 0) {
+        pdfUrl = await uploadToCloudinary(files['pdf'][0].path, 'topics/pdfs', 'image');
+      }
+      if (files['cheatsheet'] && files['cheatsheet'].length > 0) {
+        cheatsheetUrl = await uploadToCloudinary(files['cheatsheet'][0].path, 'topics/pdfs', 'image');
+      }
+    }
 
     const existingTopic = await prisma.topic.findUnique({ where: { id: id as string } });
     if (!existingTopic) {
@@ -161,7 +178,9 @@ export const updateTopic = async (req: Request, res: Response) => {
       where: { id: id as string },
       data: {
         ...(title && { title }),
-        ...(description !== undefined && { description })
+        ...(description !== undefined && { description }),
+        ...(pdfUrl !== undefined && { pdfUrl }),
+        ...(cheatsheetUrl !== undefined && { cheatsheetUrl })
       }
     });
 
