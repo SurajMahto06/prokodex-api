@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../utils/db';
+import { uploadToCloudinary } from '../utils/cloudinary';
 
 // GET /api/courses
 export const getCourses = async (req: Request, res: Response) => {
@@ -81,8 +82,7 @@ export const createCourse = async (req: Request, res: Response) => {
     let { thumbnail } = req.body;
 
     if (req.file) {
-      const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
-      thumbnail = `${baseUrl}/uploads/${req.file.filename}`;
+      thumbnail = await uploadToCloudinary(req.file.path, 'courses/thumbnails', 'image');
     }
 
     if (!title || !description) {
@@ -112,8 +112,7 @@ export const updateCourse = async (req: Request, res: Response) => {
     let { thumbnail } = req.body;
 
     if (req.file) {
-      const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
-      thumbnail = `${baseUrl}/uploads/${req.file.filename}`;
+      thumbnail = await uploadToCloudinary(req.file.path, 'courses/thumbnails', 'image');
     }
 
     const existingCourse = await prisma.course.findUnique({ where: { id: id as string } });

@@ -20,15 +20,21 @@ import statsRoutes from './routes/statsRoutes';
 const app = express();
 
 // Middleware
-const allowedOrigin = process.env.ALLOWED_ORIGIN || 'http://localhost:3000';
+const allowedOrigins = (process.env.ALLOWED_ORIGIN || 'http://localhost:3000')
+  .split(',')
+  .map(o => o.trim());
+// Also allow port 3001 as Next.js falls back to it when 3000 is busy
+if (allowedOrigins.includes('http://localhost:3000') && !allowedOrigins.includes('http://localhost:3001')) {
+  allowedOrigins.push('http://localhost:3001');
+}
 app.use(cors({
-  origin: allowedOrigin,
+  origin: allowedOrigins,
   credentials: true
 }));
 app.use(express.json());
 
 // Serve static files from the uploads directory
-app.use('/uploads', express.static(path.join(__dirname, '../../uploads')));
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 // Routes
 app.use('/api/v1/auth', authRoutes);

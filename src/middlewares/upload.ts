@@ -20,7 +20,7 @@ const storage = multer.diskStorage({
 
 export const uploadMiddleware = multer({
   storage: storage,
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit for videos
+  limits: { fileSize: 1000 * 1024 * 1024 }, // 1GB limit for videos
   fileFilter: (req, file, cb) => {
     // Accept images, videos, and pdfs/text
     if (!file.originalname.match(/\.(jpg|jpeg|png|webp|mp4|m4v|webm|pdf|md|txt)$/i)) {

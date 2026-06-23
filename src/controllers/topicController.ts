@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../utils/db';
+import { uploadToCloudinary } from '../utils/cloudinary';
 
 // GET /api/topics/:id
 export const getTopicById = async (req: Request, res: Response) => {
@@ -45,17 +46,17 @@ export const createTopic = async (req: Request, res: Response) => {
       return res.status(400).json({ message: 'Title and moduleId are required' });
     }
 
-    let videoUrl = '';
-    let pdfUrl = '';
+    let videoUrl = req.body.videoUrl || '';
+    let pdfUrl = req.body.pdfUrl || '';
 
+    // If pre-uploaded URLs are not provided, upload files directly (fallback)
     const files = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
     if (files) {
-      const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
-      if (files['video'] && files['video'].length > 0) {
-        videoUrl = `${baseUrl}/uploads/${files['video'][0].filename}`;
+      if (!videoUrl && files['video'] && files['video'].length > 0) {
+        videoUrl = await uploadToCloudinary(files['video'][0].path, 'topics/videos', 'video');
       }
-      if (files['pdf'] && files['pdf'].length > 0) {
-        pdfUrl = `${baseUrl}/uploads/${files['pdf'][0].filename}`;
+      if (!pdfUrl && files['pdf'] && files['pdf'].length > 0) {
+        pdfUrl = await uploadToCloudinary(files['pdf'][0].path, 'topics/pdfs', 'raw');
       }
     }
 
