@@ -10,7 +10,8 @@ const upload_1 = require("../middlewares/upload");
 const router = express_1.default.Router();
 const topicUploads = upload_1.uploadMiddleware.fields([
     { name: 'video', maxCount: 1 },
-    { name: 'pdf', maxCount: 1 }
+    { name: 'pdf', maxCount: 1 },
+    { name: 'cheatsheet', maxCount: 1 }
 ]);
 router.get('/:id', auth_1.authenticate, topicController_1.getTopicById);
 router.post('/', auth_1.authenticate, topicUploads, topicController_1.createTopic);

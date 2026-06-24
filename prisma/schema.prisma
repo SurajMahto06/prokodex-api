@@ -30,21 +30,73 @@ model User {
   updatedAt          DateTime @updatedAt
 
   // Student specific relationships
-  enrolledCourses   Course[]         @relation("CourseEnrollments")
-  completedTopics   Topic[]          @relation("CompletedTopics")
+  enrollments        CourseEnrollment[]
+  topicCompletions   TopicCompletion[]
   assignmentsAsStudent Assignment[]  @relation("StudentAssignments")
   certificates      Certificate[]    @relation("StudentCertificates")
 
   // Mentor specific relationships
-  assignedCourses   Course[]         @relation("MentorCourses")
-  mentees           User[]           @relation("MentorMentees")
-  mentors           User[]           @relation("MentorMentees")
+  mentorCourses      MentorCourse[]
+  menteesRelation    Mentorship[] @relation("MentorToMentee")
+  mentorsRelation    Mentorship[] @relation("MenteeToMentor")
   assignmentsAsMentor Assignment[]   @relation("MentorAssignments")
 
   // General relationships
   qaThreads         MentorshipQA[]
   qaReplies         QAReply[]
   notifications     AppNotification[]
+}
+
+// =======================
+// Explicit Many-to-Many
+// =======================
+
+model CourseEnrollment {
+  id        String   @id @default(uuid())
+  userId    String
+  courseId  String
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId])
+}
+
+model TopicCompletion {
+  id        String   @id @default(uuid())
+  userId    String
+  topicId   String
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  topic     Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, topicId])
+}
+
+model MentorCourse {
+  id        String   @id @default(uuid())
+  mentorId  String
+  courseId  String
+  createdAt DateTime @default(now())
+
+  mentor    User     @relation(fields: [mentorId], references: [id], onDelete: Cascade)
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([mentorId, courseId])
+}
+
+model Mentorship {
+  id        String   @id @default(uuid())
+  mentorId  String
+  menteeId  String
+  createdAt DateTime @default(now())
+
+  mentor    User     @relation("MentorToMentee", fields: [mentorId], references: [id], onDelete: Cascade)
+  mentee    User     @relation("MenteeToMentor", fields: [menteeId], references: [id], onDelete: Cascade)
+
+  @@unique([mentorId, menteeId])
 }
 
 // =======================
@@ -60,8 +112,8 @@ model Course {
   updatedAt   DateTime @updatedAt
 
   modules     CourseModule[]
-  students    User[]   @relation("CourseEnrollments")
-  mentors     User[]   @relation("MentorCourses")
+  enrollments CourseEnrollment[]
+  mentorCourses MentorCourse[]
   assignments Assignment[]
   qaThreads   MentorshipQA[]
   certificates Certificate[]
@@ -85,7 +137,7 @@ model Topic {
   createdAt   DateTime @default(now())
 
   // Completed by Students
-  completedBy User[]   @relation("CompletedTopics")
+  completions TopicCompletion[]
 
   pdfUrl      String?
   cheatsheetUrl String?

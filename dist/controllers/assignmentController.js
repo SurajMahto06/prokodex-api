@@ -20,10 +20,10 @@ exports.assignmentController = {
                 const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.id;
                 const role = (_b = req.user) === null || _b === void 0 ? void 0 : _b.role;
                 const page = parseInt(req.query.page) || 1;
-                const requestedLimit = parseInt(req.query.limit) || 10;
-                const limit = Math.min(requestedLimit, 100); // Hard cap at 100
+                const requestedLimit = parseInt(req.query.per_page) || 20;
+                const per_page = Math.min(requestedLimit, 100); // Hard cap at 100
                 const search = req.query.search || "";
-                const skip = (page - 1) * limit;
+                const skip = (page - 1) * per_page;
                 let whereClause = {};
                 if (role === 'STUDENT') {
                     whereClause.studentId = userId;
@@ -48,17 +48,17 @@ exports.assignmentController = {
                         },
                         orderBy: { assignedAt: 'desc' },
                         skip,
-                        take: limit
+                        take: per_page
                     }),
                     db_1.prisma.assignment.count({ where: whereClause })
                 ]);
-                const totalPages = Math.ceil(total / limit);
+                const totalPages = Math.ceil(total / per_page);
                 res.status(200).json({
                     data: assignments,
                     total,
                     page,
                     totalPages,
-                    limit
+                    per_page
                 });
             }
             catch (error) {
@@ -225,7 +225,7 @@ exports.assignmentController = {
             var _a, _b;
             try {
                 const { id } = req.params;
-                const { repoUrl, fileName } = req.body;
+                const { repoUrl, fileName, fileUrl } = req.body;
                 const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.id;
                 const existingAssignment = yield db_1.prisma.assignment.findUnique({ where: { id: id } });
                 if (!existingAssignment)
@@ -238,6 +238,7 @@ exports.assignmentController = {
                     data: {
                         repoUrl,
                         fileName,
+                        fileUrl,
                         status: 'submitted',
                         submittedAt: new Date()
                     },
@@ -269,6 +270,7 @@ exports.assignmentController = {
             }
         });
     },
+    // trigger restart
     // DELETE /api/v1/assignments/:id
     deleteAssignment(req, res) {
         return __awaiter(this, void 0, void 0, function* () {

@@ -11,13 +11,14 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteCourse = exports.updateCourse = exports.createCourse = exports.getCourseById = exports.getCourses = void 0;
 const db_1 = require("../utils/db");
+const cloudinary_1 = require("../utils/cloudinary");
 // GET /api/courses
 const getCourses = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const courses = yield db_1.prisma.course.findMany({
             include: {
                 _count: {
-                    select: { modules: true, students: true }
+                    select: { modules: true, enrollments: true }
                 },
                 modules: {
                     include: {
@@ -38,7 +39,7 @@ const getCourses = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
                 createdAt: course.createdAt,
                 updatedAt: course.updatedAt,
                 totalTopics: totalTopics,
-                _count: course._count
+                _count: Object.assign(Object.assign({}, course._count), { students: course._count.enrollments })
             };
         });
         res.status(200).json(formattedCourses);
@@ -88,8 +89,7 @@ const createCourse = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         const { title, description } = req.body;
         let { thumbnail } = req.body;
         if (req.file) {
-            const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
-            thumbnail = `${baseUrl}/uploads/${req.file.filename}`;
+            thumbnail = yield (0, cloudinary_1.uploadToCloudinary)(req.file.path, 'courses/thumbnails', 'image');
         }
         if (!title || !description) {
             return res.status(400).json({ message: 'Title and description are required' });
@@ -116,8 +116,7 @@ const updateCourse = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         const { title, description } = req.body;
         let { thumbnail } = req.body;
         if (req.file) {
-            const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
-            thumbnail = `${baseUrl}/uploads/${req.file.filename}`;
+            thumbnail = yield (0, cloudinary_1.uploadToCloudinary)(req.file.path, 'courses/thumbnails', 'image');
         }
         const existingCourse = yield db_1.prisma.course.findUnique({ where: { id: id } });
         if (!existingCourse) {

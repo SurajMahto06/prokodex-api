@@ -8,7 +8,7 @@ export const getCourses = async (req: Request, res: Response) => {
     const courses = await prisma.course.findMany({
       include: {
         _count: {
-          select: { modules: true, students: true }
+          select: { modules: true, enrollments: true }
         },
         modules: {
           include: {
@@ -30,7 +30,7 @@ export const getCourses = async (req: Request, res: Response) => {
         createdAt: course.createdAt,
         updatedAt: course.updatedAt,
         totalTopics: totalTopics,
-        _count: course._count
+        _count: { ...course._count, students: (course._count as any).enrollments }
       };
     });
 

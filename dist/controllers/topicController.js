@@ -11,6 +11,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteTopic = exports.updateTopic = exports.createTopic = exports.getTopicById = void 0;
 const db_1 = require("../utils/db");
+const cloudinary_1 = require("../utils/cloudinary");
 // GET /api/topics/:id
 const getTopicById = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
@@ -52,16 +53,20 @@ const createTopic = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
         if (!title || !moduleId) {
             return res.status(400).json({ message: 'Title and moduleId are required' });
         }
-        let videoUrl = '';
-        let pdfUrl = '';
+        let videoUrl = req.body.videoUrl || '';
+        let pdfUrl = req.body.pdfUrl || '';
+        let cheatsheetUrl = req.body.cheatsheetUrl || '';
+        // If pre-uploaded URLs are not provided, upload files directly (fallback)
         const files = req.files;
         if (files) {
-            const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
-            if (files['video'] && files['video'].length > 0) {
-                videoUrl = `${baseUrl}/uploads/${files['video'][0].filename}`;
+            if (!videoUrl && files['video'] && files['video'].length > 0) {
+                videoUrl = yield (0, cloudinary_1.uploadToCloudinary)(files['video'][0].path, 'topics/videos', 'video');
             }
-            if (files['pdf'] && files['pdf'].length > 0) {
-                pdfUrl = `${baseUrl}/uploads/${files['pdf'][0].filename}`;
+            if (!pdfUrl && files['pdf'] && files['pdf'].length > 0) {
+                pdfUrl = yield (0, cloudinary_1.uploadToCloudinary)(files['pdf'][0].path, 'topics/pdfs', 'image');
+            }
+            if (!cheatsheetUrl && files['cheatsheet'] && files['cheatsheet'].length > 0) {
+                cheatsheetUrl = yield (0, cloudinary_1.uploadToCloudinary)(files['cheatsheet'][0].path, 'topics/pdfs', 'image');
             }
         }
         // Parse JSON
@@ -82,7 +87,8 @@ const createTopic = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
                     title,
                     description: description || '',
                     moduleId,
-                    pdfUrl: pdfUrl || null
+                    pdfUrl: pdfUrl || null,
+                    cheatsheetUrl: cheatsheetUrl || null
                 }
             });
             if (videoUrl) {
@@ -152,13 +158,24 @@ const updateTopic = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
     try {
         const { id } = req.params;
         const { title, description } = req.body;
+        let pdfUrl = req.body.pdfUrl;
+        let cheatsheetUrl = req.body.cheatsheetUrl;
+        const files = req.files;
+        if (files) {
+            if (files['pdf'] && files['pdf'].length > 0) {
+                pdfUrl = yield (0, cloudinary_1.uploadToCloudinary)(files['pdf'][0].path, 'topics/pdfs', 'image');
+            }
+            if (files['cheatsheet'] && files['cheatsheet'].length > 0) {
+                cheatsheetUrl = yield (0, cloudinary_1.uploadToCloudinary)(files['cheatsheet'][0].path, 'topics/pdfs', 'image');
+            }
+        }
         const existingTopic = yield db_1.prisma.topic.findUnique({ where: { id: id } });
         if (!existingTopic) {
             return res.status(404).json({ message: 'Topic not found' });
         }
         const updatedTopic = yield db_1.prisma.topic.update({
             where: { id: id },
-            data: Object.assign(Object.assign({}, (title && { title })), (description !== undefined && { description }))
+            data: Object.assign(Object.assign(Object.assign(Object.assign({}, (title && { title })), (description !== undefined && { description })), (pdfUrl !== undefined && { pdfUrl })), (cheatsheetUrl !== undefined && { cheatsheetUrl }))
         });
         res.status(200).json({ message: 'Topic updated successfully', topic: updatedTopic });
     }

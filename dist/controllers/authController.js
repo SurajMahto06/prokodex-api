@@ -23,7 +23,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.completeTopic = exports.getMe = exports.login = exports.register = void 0;
+exports.completeTopic = exports.getMe = exports.logout = exports.login = void 0;
 const db_1 = require("../utils/db");
 const bcrypt_1 = __importDefault(require("bcrypt"));
 const jwt_1 = require("../utils/jwt");
@@ -36,74 +36,6 @@ const formatUserResponse = (user) => {
     }
     return result;
 };
-const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    try {
-        const { email, password, name, role, plan, status, enrolledCourseIds, assignedCourseIds } = req.body;
-        if (!email || !password || !name) {
-            return res.status(400).json({ message: 'Email, password, and name are required' });
-        }
-        const existingUser = yield db_1.prisma.user.findUnique({ where: { email } });
-        if (existingUser) {
-            return res.status(400).json({ message: 'User already exists' });
-        }
-        const hashedPassword = yield bcrypt_1.default.hash(password, 10);
-        const userRole = role ? String(role).toUpperCase() : 'STUDENT';
-        let overlappingMentors = [];
-        let overlappingStudents = [];
-        if (userRole === 'STUDENT' && enrolledCourseIds && enrolledCourseIds.length > 0) {
-            overlappingMentors = yield db_1.prisma.user.findMany({
-                where: {
-                    role: 'MENTOR',
-                    assignedCourses: { some: { id: { in: enrolledCourseIds } } }
-                },
-                select: { id: true }
-            });
-        }
-        else if (userRole === 'MENTOR' && assignedCourseIds && assignedCourseIds.length > 0) {
-            overlappingStudents = yield db_1.prisma.user.findMany({
-                where: {
-                    role: 'STUDENT',
-                    enrolledCourses: { some: { id: { in: assignedCourseIds } } }
-                },
-                select: { id: true }
-            });
-        }
-        const user = yield db_1.prisma.user.create({
-            data: Object.assign(Object.assign(Object.assign(Object.assign({ email, password: hashedPassword, name, role: userRole, plan: plan || null, status: status || 'active' }, (userRole === 'STUDENT' && enrolledCourseIds && enrolledCourseIds.length > 0 && {
-                enrolledCourses: {
-                    connect: enrolledCourseIds.map((id) => ({ id })),
-                },
-            })), (userRole === 'MENTOR' && assignedCourseIds && assignedCourseIds.length > 0 && {
-                assignedCourses: {
-                    connect: assignedCourseIds.map((id) => ({ id })),
-                },
-            })), (overlappingMentors.length > 0 && {
-                mentors: {
-                    connect: overlappingMentors,
-                },
-            })), (overlappingStudents.length > 0 && {
-                mentees: {
-                    connect: overlappingStudents,
-                },
-            })),
-            include: {
-                enrolledCourses: { select: { id: true, title: true } },
-                assignedCourses: { select: { id: true, title: true } },
-            },
-        });
-        const token = (0, jwt_1.generateToken)({ id: user.id, email: user.email, role: user.role });
-        res.status(201).json({
-            message: 'User registered successfully',
-            user: formatUserResponse(user),
-            token,
-        });
-    }
-    catch (error) {
-        console.error('Register error:', error);
-        res.status(500).json({ message: 'Internal server error' });
-    }
-});
-exports.register = register;
 const login = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { email, password } = req.body;
@@ -113,24 +45,38 @@ const login = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         const user = yield db_1.prisma.user.findUnique({
             where: { email },
             include: {
-                enrolledCourses: { select: { id: true, title: true } },
-                assignedCourses: { select: { id: true, title: true } },
-                completedTopics: { select: { id: true } },
-                mentees: { select: { id: true } },
+                enrollments: { select: { course: { select: { id: true, title: true } } } },
+                mentorCourses: { select: { course: { select: { id: true, title: true } } } },
+                topicCompletions: { select: { topicId: true } },
+                menteesRelation: { select: { menteeId: true } },
             },
         });
         if (!user) {
             return res.status(401).json({ message: 'Invalid email or password' });
+        }
+        const formattedUser = Object.assign(Object.assign({}, user), { enrolledCourses: user.enrollments.map((e) => e.course), assignedCourses: user.mentorCourses.map((m) => m.course), completedTopics: user.topicCompletions.map((t) => ({ id: t.topicId })), mentees: user.menteesRelation.map((m) => ({ id: m.menteeId })) });
+        delete formattedUser.enrollments;
+        delete formattedUser.mentorCourses;
+        delete formattedUser.topicCompletions;
+        delete formattedUser.menteesRelation;
+        const settings = yield db_1.prisma.settings.findUnique({ where: { id: 'global' } });
+        if ((settings === null || settings === void 0 ? void 0 : settings.maintenanceMode) && user.role !== 'ADMIN') {
+            return res.status(403).json({ message: 'Platform is currently under maintenance. Please try again later.' });
         }
         const isMatch = yield bcrypt_1.default.compare(password, user.password);
         if (!isMatch) {
             return res.status(401).json({ message: 'Invalid email or password' });
         }
         const token = (0, jwt_1.generateToken)({ id: user.id, email: user.email, role: user.role });
+        res.cookie('token', token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+        });
         res.status(200).json({
             message: 'Logged in successfully',
-            user: formatUserResponse(user),
-            token,
+            user: formatUserResponse(formattedUser),
         });
     }
     catch (error) {
@@ -139,6 +85,15 @@ const login = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     }
 });
 exports.login = login;
+const logout = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    res.clearCookie('token', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax'
+    });
+    res.status(200).json({ message: 'Logged out successfully' });
+});
+exports.logout = logout;
 // Get current authenticated user's profile
 const getMe = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
@@ -146,10 +101,10 @@ const getMe = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         const user = yield db_1.prisma.user.findUnique({
             where: { id: userId },
             include: {
-                enrolledCourses: { select: { id: true, title: true, thumbnail: true } },
-                assignedCourses: { select: { id: true, title: true, thumbnail: true } },
-                completedTopics: { select: { id: true } },
-                mentees: { select: { id: true } },
+                enrollments: { select: { course: { select: { id: true, title: true, thumbnail: true } } } },
+                mentorCourses: { select: { course: { select: { id: true, title: true, thumbnail: true } } } },
+                topicCompletions: { select: { topicId: true } },
+                menteesRelation: { select: { menteeId: true } },
                 certificates: {
                     select: { id: true, certificateId: true, issueDate: true, course: { select: { id: true, title: true } } },
                 },
@@ -158,7 +113,12 @@ const getMe = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
         }
-        res.status(200).json({ user: formatUserResponse(user) });
+        const formattedUser = Object.assign(Object.assign({}, user), { enrolledCourses: user.enrollments.map((e) => e.course), assignedCourses: user.mentorCourses.map((m) => m.course), completedTopics: user.topicCompletions.map((t) => ({ id: t.topicId })), mentees: user.menteesRelation.map((m) => ({ id: m.menteeId })) });
+        delete formattedUser.enrollments;
+        delete formattedUser.mentorCourses;
+        delete formattedUser.topicCompletions;
+        delete formattedUser.menteesRelation;
+        res.status(200).json({ user: formatUserResponse(formattedUser) });
     }
     catch (error) {
         console.error('GetMe error:', error);
@@ -176,38 +136,42 @@ const completeTopic = (req, res) => __awaiter(void 0, void 0, void 0, function* 
         const user = yield db_1.prisma.user.findUnique({
             where: { id: userId },
             include: {
-                enrolledCourses: {
+                enrollments: {
                     include: {
-                        modules: {
+                        course: {
                             include: {
-                                topics: true
+                                modules: {
+                                    include: {
+                                        topics: true
+                                    }
+                                }
                             }
                         }
                     }
                 },
-                completedTopics: true
+                topicCompletions: true
             }
         });
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
         }
-        const alreadyCompleted = user.completedTopics.some(t => t.id === topicId);
-        let updatedCompletedTopics = [...user.completedTopics];
+        const alreadyCompleted = user.topicCompletions.some((t) => t.topicId === topicId);
+        let updatedCompletedTopics = [...user.topicCompletions];
         if (!alreadyCompleted) {
-            updatedCompletedTopics.push({ id: topicId });
+            updatedCompletedTopics.push({ topicId });
             yield db_1.prisma.user.update({
                 where: { id: userId },
                 data: {
-                    completedTopics: {
-                        connect: { id: topicId }
+                    topicCompletions: {
+                        create: { topicId }
                     }
                 }
             });
         }
         // Calculate total topics across all enrolled courses
         let totalTopics = 0;
-        for (const course of user.enrolledCourses) {
-            for (const mod of course.modules) {
+        for (const enrollment of user.enrollments) {
+            for (const mod of enrollment.course.modules) {
                 totalTopics += mod.topics.length;
             }
         }

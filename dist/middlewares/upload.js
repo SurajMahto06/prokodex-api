@@ -18,15 +18,16 @@ const storage = multer_1.default.diskStorage({
     },
     filename: function (req, file, cb) {
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, uniqueSuffix + path_1.default.extname(file.originalname));
+        const originalName = path_1.default.parse(file.originalname).name.replace(/[^a-zA-Z0-9]/g, '_');
+        cb(null, originalName + '_' + uniqueSuffix + path_1.default.extname(file.originalname));
     }
 });
 exports.uploadMiddleware = (0, multer_1.default)({
     storage: storage,
-    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit for videos
+    limits: { fileSize: 1000 * 1024 * 1024 }, // 1GB limit for videos
     fileFilter: (req, file, cb) => {
-        // Accept images, videos, and pdfs/text
-        if (!file.originalname.match(/\.(jpg|jpeg|png|webp|mp4|m4v|webm|pdf|md|txt)$/i)) {
+        // Accept images, videos, pdfs/text, and zip/archives
+        if (!file.originalname.match(/\.(jpg|jpeg|png|webp|mp4|m4v|webm|pdf|md|txt|zip|rar|7z)$/i)) {
             return cb(new Error('Invalid file type!'));
         }
         cb(null, true);

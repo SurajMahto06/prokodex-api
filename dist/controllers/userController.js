@@ -26,12 +26,14 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteUser = exports.updateUser = exports.createUser = exports.getUserById = exports.getUsers = exports.syncMentors = void 0;
 const db_1 = require("../utils/db");
 const bcrypt_1 = __importDefault(require("bcrypt"));
-// Helper to exclude password and map assignedCourses to assignedCourses
 const formatUserResponse = (user) => {
-    const { password, assignedCourses } = user, userWithoutPassword = __rest(user, ["password", "assignedCourses"]);
+    const { password, mentorCourses, enrollments } = user, userWithoutPassword = __rest(user, ["password", "mentorCourses", "enrollments"]);
     const result = Object.assign({}, userWithoutPassword);
-    if (assignedCourses) {
-        result.assignedCourses = assignedCourses;
+    if (mentorCourses) {
+        result.assignedCourses = mentorCourses.map((m) => m.course || { id: m.courseId });
+    }
+    if (enrollments) {
+        result.enrolledCourses = enrollments.map((e) => e.course || { id: e.courseId });
     }
     return result;
 };
@@ -40,24 +42,28 @@ const syncMentors = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
     try {
         const mentors = yield db_1.prisma.user.findMany({
             where: { role: 'MENTOR' },
-            include: { assignedCourses: true }
+            include: { mentorCourses: true }
         });
         const students = yield db_1.prisma.user.findMany({
             where: { role: 'STUDENT' },
-            include: { enrolledCourses: true }
+            include: { enrollments: true }
         });
         let syncedCount = 0;
         for (const mentor of mentors) {
-            const assignedCourseIds = mentor.assignedCourses.map(c => c.id);
+            const assignedCourseIds = mentor.mentorCourses.map((c) => c.courseId);
             if (assignedCourseIds.length === 0)
                 continue;
-            const overlappingStudents = students.filter(student => student.enrolledCourses.some(course => assignedCourseIds.includes(course.id)));
+            const overlappingStudents = students.filter(student => student.enrollments.some((e) => assignedCourseIds.includes(e.courseId)));
             if (overlappingStudents.length > 0) {
+                // Clear old ones first to avoid unique constraint errors
+                yield db_1.prisma.mentorship.deleteMany({
+                    where: { mentorId: mentor.id }
+                });
                 yield db_1.prisma.user.update({
                     where: { id: mentor.id },
                     data: {
-                        mentees: {
-                            connect: overlappingStudents.map(s => ({ id: s.id }))
+                        menteesRelation: {
+                            create: overlappingStudents.map(s => ({ menteeId: s.id }))
                         }
                     }
                 });
@@ -65,16 +71,19 @@ const syncMentors = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
             }
         }
         for (const student of students) {
-            const enrolledCourseIds = student.enrolledCourses.map(c => c.id);
+            const enrolledCourseIds = student.enrollments.map((c) => c.courseId);
             if (enrolledCourseIds.length === 0)
                 continue;
-            const overlappingMentors = mentors.filter(mentor => mentor.assignedCourses.some(course => enrolledCourseIds.includes(course.id)));
+            const overlappingMentors = mentors.filter(mentor => mentor.mentorCourses.some((course) => enrolledCourseIds.includes(course.courseId)));
             if (overlappingMentors.length > 0) {
+                yield db_1.prisma.mentorship.deleteMany({
+                    where: { menteeId: student.id }
+                });
                 yield db_1.prisma.user.update({
                     where: { id: student.id },
                     data: {
-                        mentors: {
-                            connect: overlappingMentors.map(m => ({ id: m.id }))
+                        mentorsRelation: {
+                            create: overlappingMentors.map(m => ({ mentorId: m.id }))
                         }
                     }
                 });
@@ -94,9 +103,9 @@ const getUsers = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         const { role, status, search } = req.query;
         // Pagination parameters
         const page = parseInt(req.query.page) || 1;
-        const requestedLimit = parseInt(req.query.limit) || 10;
-        const limit = Math.min(requestedLimit, 100); // Hard cap at 100
-        const skip = (page - 1) * limit;
+        const requestedLimit = parseInt(req.query.per_page) || 20;
+        const per_page = Math.min(requestedLimit, 100); // Hard cap at 100
+        const skip = (page - 1) * per_page;
         // Build the where clause
         const whereClause = {};
         if (role) {
@@ -116,23 +125,23 @@ const getUsers = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             db_1.prisma.user.findMany({
                 where: whereClause,
                 include: {
-                    enrolledCourses: { select: { id: true } },
-                    assignedCourses: { select: { id: true } },
+                    enrollments: { select: { courseId: true } },
+                    mentorCourses: { select: { courseId: true } },
                 },
                 orderBy: { createdAt: 'desc' },
                 skip,
-                take: limit
+                take: per_page
             }),
             db_1.prisma.user.count({ where: whereClause })
         ]);
         const formattedUsers = users.map(user => formatUserResponse(user));
-        const totalPages = Math.ceil(total / limit);
+        const totalPages = Math.ceil(total / per_page);
         res.status(200).json({
             data: formattedUsers,
             total,
             page,
             totalPages,
-            limit
+            per_page
         });
     }
     catch (error) {
@@ -148,16 +157,29 @@ const getUserById = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
         const user = yield db_1.prisma.user.findUnique({
             where: { id: id },
             include: {
-                enrolledCourses: { select: { id: true, title: true } },
-                assignedCourses: { select: { id: true, title: true } },
-                mentees: { select: { id: true, name: true, email: true } },
-                mentors: { select: { id: true, name: true, email: true } },
+                enrollments: { select: { course: { select: { id: true, title: true } } } },
+                mentorCourses: { select: { course: { select: { id: true, title: true } } } },
+                menteesRelation: { select: { mentee: { select: { id: true, name: true, email: true } } } },
+                mentorsRelation: { select: { mentor: { select: { id: true, name: true, email: true } } } },
             },
         });
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
         }
-        res.status(200).json(formatUserResponse(user));
+        const formattedUser = Object.assign({}, user);
+        if (user.enrollments)
+            formattedUser.enrolledCourses = user.enrollments.map((e) => e.course);
+        if (user.mentorCourses)
+            formattedUser.assignedCourses = user.mentorCourses.map((m) => m.course);
+        if (user.menteesRelation)
+            formattedUser.mentees = user.menteesRelation.map((m) => m.mentee);
+        if (user.mentorsRelation)
+            formattedUser.mentors = user.mentorsRelation.map((m) => m.mentor);
+        delete formattedUser.enrollments;
+        delete formattedUser.mentorCourses;
+        delete formattedUser.menteesRelation;
+        delete formattedUser.mentorsRelation;
+        res.status(200).json(formatUserResponse(formattedUser));
     }
     catch (error) {
         console.error('GetUserById error:', error);
@@ -185,7 +207,7 @@ const createUser = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
             overlappingMentors = yield db_1.prisma.user.findMany({
                 where: {
                     role: 'MENTOR',
-                    assignedCourses: { some: { id: { in: enrolledCourseIds } } }
+                    mentorCourses: { some: { courseId: { in: enrolledCourseIds } } }
                 },
                 select: { id: true }
             });
@@ -194,32 +216,32 @@ const createUser = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
             overlappingStudents = yield db_1.prisma.user.findMany({
                 where: {
                     role: 'STUDENT',
-                    enrolledCourses: { some: { id: { in: assignedCourseIds } } }
+                    enrollments: { some: { courseId: { in: assignedCourseIds } } }
                 },
                 select: { id: true }
             });
         }
         const user = yield db_1.prisma.user.create({
             data: Object.assign(Object.assign(Object.assign(Object.assign({ email, password: hashedPassword, name, role: userRole, plan: plan || null, status: status || 'active' }, (userRole === 'STUDENT' && enrolledCourseIds && enrolledCourseIds.length > 0 && {
-                enrolledCourses: {
-                    connect: enrolledCourseIds.map((id) => ({ id })),
+                enrollments: {
+                    create: enrolledCourseIds.map((id) => ({ courseId: id })),
                 },
             })), (userRole === 'MENTOR' && assignedCourseIds && assignedCourseIds.length > 0 && {
-                assignedCourses: {
-                    connect: assignedCourseIds.map((id) => ({ id })),
+                mentorCourses: {
+                    create: assignedCourseIds.map((id) => ({ courseId: id })),
                 },
             })), (overlappingMentors.length > 0 && {
-                mentors: {
-                    connect: overlappingMentors,
+                mentorsRelation: {
+                    create: overlappingMentors.map(m => ({ mentorId: m.id })),
                 },
             })), (overlappingStudents.length > 0 && {
-                mentees: {
-                    connect: overlappingStudents,
+                menteesRelation: {
+                    create: overlappingStudents.map(s => ({ menteeId: s.id })),
                 },
             })),
             include: {
-                enrolledCourses: { select: { id: true, title: true } },
-                assignedCourses: { select: { id: true, title: true } },
+                enrollments: { select: { course: { select: { id: true, title: true } } } },
+                mentorCourses: { select: { course: { select: { id: true, title: true } } } },
             },
         });
         res.status(201).json({
@@ -259,38 +281,49 @@ const updateUser = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
         }
         // Handle relations if provided
         if (enrolledCourseIds !== undefined) {
-            updateData.enrolledCourses = {
-                set: [], // Disconnect all first
-                connect: enrolledCourseIds.map((courseId) => ({ id: courseId })),
-            };
+            // For explicit relations, delete old and create new
+            yield db_1.prisma.courseEnrollment.deleteMany({ where: { userId: id } });
+            if (enrolledCourseIds.length > 0) {
+                updateData.enrollments = {
+                    create: enrolledCourseIds.map((courseId) => ({ courseId })),
+                };
+            }
         }
         if (assignedCourseIds !== undefined) {
-            updateData.assignedCourses = {
-                set: [], // Disconnect all first
-                connect: assignedCourseIds.map((courseId) => ({ id: courseId })),
-            };
+            yield db_1.prisma.mentorCourse.deleteMany({ where: { mentorId: id } });
+            if (assignedCourseIds.length > 0) {
+                updateData.mentorCourses = {
+                    create: assignedCourseIds.map((courseId) => ({ courseId })),
+                };
+            }
         }
         const targetRole = updateData.role || existingUser.role;
         if (targetRole === 'STUDENT' && enrolledCourseIds !== undefined) {
             const overlappingMentors = yield db_1.prisma.user.findMany({
-                where: { role: 'MENTOR', assignedCourses: { some: { id: { in: enrolledCourseIds } } } },
+                where: { role: 'MENTOR', mentorCourses: { some: { courseId: { in: enrolledCourseIds } } } },
                 select: { id: true }
             });
-            updateData.mentors = { set: [], connect: overlappingMentors };
+            yield db_1.prisma.mentorship.deleteMany({ where: { menteeId: id } });
+            if (overlappingMentors.length > 0) {
+                updateData.mentorsRelation = { create: overlappingMentors.map(m => ({ mentorId: m.id })) };
+            }
         }
         else if (targetRole === 'MENTOR' && assignedCourseIds !== undefined) {
             const overlappingStudents = yield db_1.prisma.user.findMany({
-                where: { role: 'STUDENT', enrolledCourses: { some: { id: { in: assignedCourseIds } } } },
+                where: { role: 'STUDENT', enrollments: { some: { courseId: { in: assignedCourseIds } } } },
                 select: { id: true }
             });
-            updateData.mentees = { set: [], connect: overlappingStudents };
+            yield db_1.prisma.mentorship.deleteMany({ where: { mentorId: id } });
+            if (overlappingStudents.length > 0) {
+                updateData.menteesRelation = { create: overlappingStudents.map(s => ({ menteeId: s.id })) };
+            }
         }
         const user = yield db_1.prisma.user.update({
             where: { id: id },
             data: updateData,
             include: {
-                enrolledCourses: { select: { id: true, title: true } },
-                assignedCourses: { select: { id: true, title: true } },
+                enrollments: { select: { course: { select: { id: true, title: true } } } },
+                mentorCourses: { select: { course: { select: { id: true, title: true } } } },
             },
         });
         res.status(200).json({

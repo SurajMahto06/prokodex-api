@@ -21,21 +21,26 @@ router.get('/mentees', (req, res) => __awaiter(void 0, void 0, void 0, function*
         const user = yield db_1.prisma.user.findUnique({
             where: { id: userId },
             select: {
-                mentees: {
+                menteesRelation: {
                     select: {
-                        id: true,
-                        name: true,
-                        email: true,
-                        role: true,
-                        progressPercentage: true,
-                        enrolledCourses: { select: { id: true, title: true } }
+                        mentee: {
+                            select: {
+                                id: true,
+                                name: true,
+                                email: true,
+                                role: true,
+                                progressPercentage: true,
+                                enrollments: { select: { course: { select: { id: true, title: true } } } }
+                            }
+                        }
                     }
                 }
             }
         });
         if (!user)
             return res.status(404).json({ message: 'User not found' });
-        res.status(200).json({ mentees: user.mentees });
+        const mentees = user.menteesRelation.map((m) => (Object.assign(Object.assign({}, m.mentee), { enrolledCourses: m.mentee.enrollments.map((e) => e.course) })));
+        res.status(200).json({ mentees });
     }
     catch (error) {
         res.status(500).json({ message: 'Internal server error' });
@@ -48,14 +53,15 @@ router.get('/mentors', (req, res) => __awaiter(void 0, void 0, void 0, function*
         const user = yield db_1.prisma.user.findUnique({
             where: { id: userId },
             select: {
-                mentors: {
-                    select: { id: true, name: true, email: true }
+                mentorsRelation: {
+                    select: { mentor: { select: { id: true, name: true, email: true } } }
                 }
             }
         });
         if (!user)
             return res.status(404).json({ message: 'User not found' });
-        res.status(200).json({ mentors: user.mentors });
+        const mentors = user.mentorsRelation.map((m) => m.mentor);
+        res.status(200).json({ mentors });
     }
     catch (error) {
         res.status(500).json({ message: 'Internal server error' });
@@ -68,15 +74,15 @@ router.get('/courses', (req, res) => __awaiter(void 0, void 0, void 0, function*
         const user = yield db_1.prisma.user.findUnique({
             where: { id: userId },
             select: {
-                enrolledCourses: { select: { id: true, title: true, thumbnail: true } },
-                assignedCourses: { select: { id: true, title: true, thumbnail: true } }
+                enrollments: { select: { course: { select: { id: true, title: true, thumbnail: true } } } },
+                mentorCourses: { select: { course: { select: { id: true, title: true, thumbnail: true } } } }
             }
         });
         if (!user)
             return res.status(404).json({ message: 'User not found' });
         res.status(200).json({
-            enrolledCourses: user.enrolledCourses,
-            assignedCourses: user.assignedCourses
+            enrolledCourses: user.enrollments.map((e) => e.course),
+            assignedCourses: user.mentorCourses.map((m) => m.course)
         });
     }
     catch (error) {

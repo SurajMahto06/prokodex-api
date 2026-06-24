@@ -19,10 +19,10 @@ const getCertificates = (req, res) => __awaiter(void 0, void 0, void 0, function
         const userId = (_b = req.user) === null || _b === void 0 ? void 0 : _b.id;
         // Pagination parameters
         const page = parseInt(req.query.page) || 1;
-        const requestedLimit = parseInt(req.query.limit) || 10;
-        const limit = Math.min(requestedLimit, 100); // Hard cap at 100
+        const requestedLimit = parseInt(req.query.per_page) || 20;
+        const per_page = Math.min(requestedLimit, 100); // Hard cap at 100
         const search = req.query.search || "";
-        const skip = (page - 1) * limit;
+        const skip = (page - 1) * per_page;
         let whereClause = {};
         if (userRole !== 'ADMIN') {
             whereClause.studentId = userId;
@@ -41,19 +41,19 @@ const getCertificates = (req, res) => __awaiter(void 0, void 0, void 0, function
                     student: { select: { id: true, name: true, email: true } },
                     course: { select: { id: true, title: true } }
                 },
-                orderBy: { issueDate: 'desc' },
+                orderBy: { createdAt: 'desc' },
                 skip,
-                take: limit
+                take: per_page
             }),
             db_1.prisma.certificate.count({ where: whereClause })
         ]);
-        const totalPages = Math.ceil(total / limit);
+        const totalPages = Math.ceil(total / per_page);
         res.status(200).json({
             data: certificates,
             total,
             page,
             totalPages,
-            limit
+            per_page
         });
     }
     catch (error) {
@@ -76,7 +76,14 @@ const verifyCertificate = (req, res) => __awaiter(void 0, void 0, void 0, functi
         if (!certificate) {
             return res.status(404).json({ message: 'Certificate not found' });
         }
-        res.status(200).json(certificate);
+        let durationStr = "Self-Paced Track";
+        if (certificate.startDate && certificate.endDate) {
+            const start = new Date(certificate.startDate);
+            const end = new Date(certificate.endDate);
+            const months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth()) + 1;
+            durationStr = `${months} Month${months !== 1 ? 's' : ''}`;
+        }
+        res.status(200).json(Object.assign(Object.assign({}, certificate), { duration: durationStr }));
     }
     catch (error) {
         console.error('verifyCertificate error:', error);
@@ -87,7 +94,7 @@ exports.verifyCertificate = verifyCertificate;
 // POST /api/certificates/issue
 const issueCertificate = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const { studentId, courseId, dateOfIssue } = req.body;
+        const { studentId, courseId, dateOfIssue, startDate, endDate } = req.body;
         if (!studentId || !courseId || !dateOfIssue) {
             return res.status(400).json({ message: 'Missing required fields' });
         }
@@ -118,13 +125,16 @@ const issueCertificate = (req, res) => __awaiter(void 0, void 0, void 0, functio
             }
         });
         const sequence = String(existingCountThisYear + 1).padStart(3, '0');
-        const certificateId = `CL-${year}-${initials}${sequence}`;
+        const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+        const certificateId = `CL-${year}-${initials}${sequence}-${randomSuffix}`;
         const newCertificate = yield db_1.prisma.certificate.create({
             data: {
                 certificateId,
                 studentId,
                 courseId,
-                issueDate: new Date(dateOfIssue)
+                issueDate: new Date(dateOfIssue),
+                startDate: startDate ? new Date(startDate) : undefined,
+                endDate: endDate ? new Date(endDate) : undefined
             },
             include: {
                 student: { select: { name: true, email: true } },

@@ -11,13 +11,14 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteQAThread = exports.updateStatus = exports.addReply = exports.createQAThread = exports.getQAThreads = void 0;
 const db_1 = require("../utils/db");
+const cloudinary_1 = require("../utils/cloudinary");
 const getQAThreads = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const userId = req.user.id;
         const role = req.user.role;
         const normalizedRole = String(role || '').toUpperCase();
         const page = req.query.page ? parseInt(req.query.page) : undefined;
-        const limit = req.query.limit ? parseInt(req.query.limit) : undefined;
+        const per_page = req.query.per_page ? parseInt(req.query.per_page) : undefined;
         let whereClause = {};
         if (normalizedRole === 'STUDENT') {
             whereClause = { studentId: userId };
@@ -25,14 +26,14 @@ const getQAThreads = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         else if (normalizedRole === 'MENTOR') {
             const user = yield db_1.prisma.user.findUnique({
                 where: { id: userId },
-                include: { assignedCourses: { select: { id: true } } }
+                include: { mentorCourses: { select: { courseId: true } } }
             });
-            const courseIds = (user === null || user === void 0 ? void 0 : user.assignedCourses.map(c => c.id)) || [];
+            const courseIds = (user === null || user === void 0 ? void 0 : user.mentorCourses.map((m) => m.courseId)) || [];
             whereClause = { courseId: { in: courseIds } };
         }
         const total = yield db_1.prisma.mentorshipQA.count({ where: whereClause });
-        const skip = page && limit ? (page - 1) * limit : undefined;
-        const take = limit;
+        const skip = page && per_page ? (page - 1) * per_page : undefined;
+        const take = per_page;
         const threads = yield db_1.prisma.mentorshipQA.findMany(Object.assign(Object.assign(Object.assign({ where: whereClause }, (skip !== undefined ? { skip } : {})), (take !== undefined ? { take } : {})), { include: {
                 student: { select: { id: true, name: true, avatarUrl: true, role: true } },
                 course: { select: { id: true, title: true } },
@@ -41,7 +42,7 @@ const getQAThreads = (req, res) => __awaiter(void 0, void 0, void 0, function* (
                     orderBy: { createdAt: 'desc' }
                 }
             }, orderBy: { createdAt: 'desc' } }));
-        if (page !== undefined && limit !== undefined) {
+        if (page !== undefined && per_page !== undefined) {
             res.status(200).json({
                 threads,
                 hasMore: (skip || 0) + threads.length < total,
@@ -69,12 +70,21 @@ const createQAThread = (req, res) => __awaiter(void 0, void 0, void 0, function*
         if (!courseId || !question) {
             return res.status(400).json({ message: 'courseId and question are required' });
         }
+        let uploadedImageUrls = [];
+        if (imageUrls && Array.isArray(imageUrls)) {
+            uploadedImageUrls = yield Promise.all(imageUrls.map((img) => __awaiter(void 0, void 0, void 0, function* () {
+                if (img && img.startsWith('data:image')) {
+                    return yield (0, cloudinary_1.uploadBase64ToCloudinary)(img, 'qa_images');
+                }
+                return img;
+            })));
+        }
         const newThread = yield db_1.prisma.mentorshipQA.create({
             data: {
                 studentId: userId,
                 courseId,
                 question,
-                imageUrls: (imageUrls || [])
+                imageUrls: uploadedImageUrls
             },
             include: {
                 student: { select: { id: true, name: true, avatarUrl: true, role: true } },
@@ -98,8 +108,8 @@ const createQAThread = (req, res) => __awaiter(void 0, void 0, void 0, function*
             const courseMentors = yield db_1.prisma.user.findMany({
                 where: {
                     role: 'MENTOR',
-                    assignedCourses: {
-                        some: { id: courseId }
+                    mentorCourses: {
+                        some: { courseId: courseId }
                     }
                 },
                 select: { id: true }
@@ -107,8 +117,8 @@ const createQAThread = (req, res) => __awaiter(void 0, void 0, void 0, function*
             const studentMentors = yield db_1.prisma.user.findMany({
                 where: {
                     role: 'MENTOR',
-                    mentees: {
-                        some: { id: userId }
+                    menteesRelation: {
+                        some: { menteeId: userId }
                     }
                 },
                 select: { id: true }
@@ -157,12 +167,21 @@ const addReply = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         if (!thread) {
             return res.status(404).json({ message: 'QA thread not found' });
         }
+        let uploadedImageUrls = [];
+        if (imageUrls && Array.isArray(imageUrls)) {
+            uploadedImageUrls = yield Promise.all(imageUrls.map((img) => __awaiter(void 0, void 0, void 0, function* () {
+                if (img && img.startsWith('data:image')) {
+                    return yield (0, cloudinary_1.uploadBase64ToCloudinary)(img, 'qa_images');
+                }
+                return img;
+            })));
+        }
         const reply = yield db_1.prisma.qAReply.create({
             data: {
                 qaThreadId: id,
                 authorId: userId,
                 content,
-                imageUrls: (imageUrls || [])
+                imageUrls: uploadedImageUrls
             },
             include: {
                 author: { select: { id: true, name: true, avatarUrl: true, role: true } }
@@ -194,8 +213,8 @@ const addReply = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
                 const courseMentors = yield db_1.prisma.user.findMany({
                     where: {
                         role: 'MENTOR',
-                        assignedCourses: {
-                            some: { id: thread.courseId }
+                        mentorCourses: {
+                            some: { courseId: thread.courseId }
                         }
                     },
                     select: { id: true }
@@ -203,8 +222,8 @@ const addReply = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
                 const studentMentors = yield db_1.prisma.user.findMany({
                     where: {
                         role: 'MENTOR',
-                        mentees: {
-                            some: { id: thread.studentId }
+                        menteesRelation: {
+                            some: { menteeId: thread.studentId }
                         }
                     },
                     select: { id: true }
@@ -289,12 +308,12 @@ const deleteQAThread = (req, res) => __awaiter(void 0, void 0, void 0, function*
             const mentorWithRel = yield db_1.prisma.user.findUnique({
                 where: { id: userId },
                 include: {
-                    assignedCourses: { select: { id: true } },
-                    mentees: { select: { id: true } }
+                    mentorCourses: { select: { courseId: true } },
+                    menteesRelation: { select: { menteeId: true } }
                 }
             });
-            const isCourseAssigned = mentorWithRel === null || mentorWithRel === void 0 ? void 0 : mentorWithRel.assignedCourses.some(c => c.id === thread.courseId);
-            const isMenteeAssigned = mentorWithRel === null || mentorWithRel === void 0 ? void 0 : mentorWithRel.mentees.some(m => m.id === thread.studentId);
+            const isCourseAssigned = mentorWithRel === null || mentorWithRel === void 0 ? void 0 : mentorWithRel.mentorCourses.some((c) => c.courseId === thread.courseId);
+            const isMenteeAssigned = mentorWithRel === null || mentorWithRel === void 0 ? void 0 : mentorWithRel.menteesRelation.some((m) => m.menteeId === thread.studentId);
             if (!isCourseAssigned && !isMenteeAssigned) {
                 return res.status(403).json({ message: 'Permission denied: This discussion does not belong to your assigned courses or mentees.' });
             }

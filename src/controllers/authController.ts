@@ -24,16 +24,28 @@ export const login = async (req: Request, res: Response) => {
     const user = await prisma.user.findUnique({
       where: { email },
       include: {
-        enrolledCourses: { select: { id: true, title: true } },
-        assignedCourses: { select: { id: true, title: true } },
-        completedTopics: { select: { id: true } },
-        mentees: { select: { id: true } },
+        enrollments: { select: { course: { select: { id: true, title: true } } } },
+        mentorCourses: { select: { course: { select: { id: true, title: true } } } },
+        topicCompletions: { select: { topicId: true } },
+        menteesRelation: { select: { menteeId: true } },
       },
     });
 
     if (!user) {
       return res.status(401).json({ message: 'Invalid email or password' });
     }
+
+    const formattedUser: any = {
+      ...user,
+      enrolledCourses: user.enrollments.map((e: any) => e.course),
+      assignedCourses: user.mentorCourses.map((m: any) => m.course),
+      completedTopics: user.topicCompletions.map((t: any) => ({ id: t.topicId })),
+      mentees: user.menteesRelation.map((m: any) => ({ id: m.menteeId })),
+    };
+    delete formattedUser.enrollments;
+    delete formattedUser.mentorCourses;
+    delete formattedUser.topicCompletions;
+    delete formattedUser.menteesRelation;
 
     const settings = await prisma.settings.findUnique({ where: { id: 'global' } });
     if (settings?.maintenanceMode && user.role !== 'ADMIN') {
@@ -56,7 +68,7 @@ export const login = async (req: Request, res: Response) => {
 
     res.status(200).json({
       message: 'Logged in successfully',
-      user: formatUserResponse(user),
+      user: formatUserResponse(formattedUser),
     });
   } catch (error: any) {
     console.error('Login error:', error);
@@ -80,10 +92,10 @@ export const getMe = async (req: Request, res: Response) => {
     const user = await prisma.user.findUnique({
       where: { id: userId },
       include: {
-        enrolledCourses: { select: { id: true, title: true, thumbnail: true } },
-        assignedCourses: { select: { id: true, title: true, thumbnail: true } },
-        completedTopics: { select: { id: true } },
-        mentees: { select: { id: true } },
+        enrollments: { select: { course: { select: { id: true, title: true, thumbnail: true } } } },
+        mentorCourses: { select: { course: { select: { id: true, title: true, thumbnail: true } } } },
+        topicCompletions: { select: { topicId: true } },
+        menteesRelation: { select: { menteeId: true } },
         certificates: {
           select: { id: true, certificateId: true, issueDate: true, course: { select: { id: true, title: true } } },
         },
@@ -94,7 +106,19 @@ export const getMe = async (req: Request, res: Response) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    res.status(200).json({ user: formatUserResponse(user) });
+    const formattedUser: any = {
+      ...user,
+      enrolledCourses: user.enrollments.map((e: any) => e.course),
+      assignedCourses: user.mentorCourses.map((m: any) => m.course),
+      completedTopics: user.topicCompletions.map((t: any) => ({ id: t.topicId })),
+      mentees: user.menteesRelation.map((m: any) => ({ id: m.menteeId })),
+    };
+    delete formattedUser.enrollments;
+    delete formattedUser.mentorCourses;
+    delete formattedUser.topicCompletions;
+    delete formattedUser.menteesRelation;
+
+    res.status(200).json({ user: formatUserResponse(formattedUser) });
   } catch (error: any) {
     console.error('GetMe error:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -113,16 +137,20 @@ export const completeTopic = async (req: Request, res: Response) => {
     const user = await prisma.user.findUnique({
       where: { id: userId },
       include: {
-        enrolledCourses: {
+        enrollments: {
           include: {
-            modules: {
+            course: {
               include: {
-                topics: true
+                modules: {
+                  include: {
+                    topics: true
+                  }
+                }
               }
             }
           }
         },
-        completedTopics: true
+        topicCompletions: true
       }
     });
 
@@ -130,16 +158,16 @@ export const completeTopic = async (req: Request, res: Response) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    const alreadyCompleted = user.completedTopics.some(t => t.id === topicId);
-    let updatedCompletedTopics = [...user.completedTopics];
+    const alreadyCompleted = user.topicCompletions.some((t: any) => t.topicId === topicId);
+    let updatedCompletedTopics = [...user.topicCompletions];
 
     if (!alreadyCompleted) {
-      updatedCompletedTopics.push({ id: topicId } as any);
+      updatedCompletedTopics.push({ topicId } as any);
       await prisma.user.update({
         where: { id: userId },
         data: {
-          completedTopics: {
-            connect: { id: topicId }
+          topicCompletions: {
+            create: { topicId }
           }
         }
       });
@@ -147,8 +175,8 @@ export const completeTopic = async (req: Request, res: Response) => {
 
     // Calculate total topics across all enrolled courses
     let totalTopics = 0;
-    for (const course of user.enrolledCourses) {
-      for (const mod of course.modules) {
+    for (const enrollment of user.enrollments) {
+      for (const mod of enrollment.course.modules) {
         totalTopics += mod.topics.length;
       }
     }

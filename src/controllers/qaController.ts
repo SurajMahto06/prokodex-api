@@ -18,9 +18,9 @@ export const getQAThreads = async (req: Request, res: Response) => {
     } else if (normalizedRole === 'MENTOR') {
       const user = await prisma.user.findUnique({
         where: { id: userId },
-        include: { assignedCourses: { select: { id: true } } }
+        include: { mentorCourses: { select: { courseId: true } } }
       });
-      const courseIds = user?.assignedCourses.map(c => c.id) || [];
+      const courseIds = user?.mentorCourses.map((m: any) => m.courseId) || [];
       whereClause = { courseId: { in: courseIds } };
     }
 
@@ -115,8 +115,8 @@ export const createQAThread = async (req: Request, res: Response) => {
       const courseMentors = await prisma.user.findMany({
         where: {
           role: 'MENTOR',
-          assignedCourses: {
-            some: { id: courseId }
+          mentorCourses: {
+            some: { courseId: courseId }
           }
         },
         select: { id: true }
@@ -125,8 +125,8 @@ export const createQAThread = async (req: Request, res: Response) => {
       const studentMentors = await prisma.user.findMany({
         where: {
           role: 'MENTOR',
-          mentees: {
-            some: { id: userId }
+          menteesRelation: {
+            some: { menteeId: userId }
           }
         },
         select: { id: true }
@@ -233,8 +233,8 @@ export const addReply = async (req: Request, res: Response) => {
         const courseMentors = await prisma.user.findMany({
           where: {
             role: 'MENTOR',
-            assignedCourses: {
-              some: { id: thread.courseId }
+            mentorCourses: {
+              some: { courseId: thread.courseId }
             }
           },
           select: { id: true }
@@ -243,8 +243,8 @@ export const addReply = async (req: Request, res: Response) => {
         const studentMentors = await prisma.user.findMany({
           where: {
             role: 'MENTOR',
-            mentees: {
-              some: { id: thread.studentId }
+            menteesRelation: {
+              some: { menteeId: thread.studentId }
             }
           },
           select: { id: true }
@@ -335,13 +335,13 @@ export const deleteQAThread = async (req: Request, res: Response) => {
       const mentorWithRel = await prisma.user.findUnique({
         where: { id: userId },
         include: {
-          assignedCourses: { select: { id: true } },
-          mentees: { select: { id: true } }
+          mentorCourses: { select: { courseId: true } },
+          menteesRelation: { select: { menteeId: true } }
         }
       });
 
-      const isCourseAssigned = mentorWithRel?.assignedCourses.some(c => c.id === thread.courseId);
-      const isMenteeAssigned = mentorWithRel?.mentees.some(m => m.id === thread.studentId);
+      const isCourseAssigned = mentorWithRel?.mentorCourses.some((c: any) => c.courseId === thread.courseId);
+      const isMenteeAssigned = mentorWithRel?.menteesRelation.some((m: any) => m.menteeId === thread.studentId);
 
       if (!isCourseAssigned && !isMenteeAssigned) {
         return res.status(403).json({ message: 'Permission denied: This discussion does not belong to your assigned courses or mentees.' });

@@ -7,6 +7,9 @@ export const getCertificates = async (req: Request, res: Response) => {
     const userRole = req.user?.role;
     const userId = req.user?.id;
 
+    const paginate = req.query.paginate as string;
+    const isPaginated = paginate !== 'false';
+
     // Pagination parameters
     const page = parseInt(req.query.page as string) || 1;
     const requestedLimit = parseInt(req.query.per_page as string) || 20;
@@ -37,20 +40,19 @@ export const getCertificates = async (req: Request, res: Response) => {
           course: { select: { id: true, title: true } }
         },
         orderBy: { createdAt: 'desc' },
-        skip,
-        take: per_page
+        ...(isPaginated ? { skip, take: per_page } : {})
       }),
       prisma.certificate.count({ where: whereClause })
     ]);
 
-    const totalPages = Math.ceil(total / per_page);
+    const totalPages = isPaginated ? Math.ceil(total / per_page) : 1;
 
     res.status(200).json({
       data: certificates,
       total,
-      page,
+      page: isPaginated ? page : 1,
       totalPages,
-      per_page
+      per_page: isPaginated ? per_page : total
     });
   } catch (error: any) {
     console.error('getCertificates error:', error);
